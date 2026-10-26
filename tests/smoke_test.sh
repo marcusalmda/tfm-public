@@ -13,30 +13,30 @@ CFG=tests/smoke_config.yaml
 rm -rf "$O"; mkdir -p "$O"
 
 echo "== 0. fixture =="
-python tests/make_tiny_data.py
+python3 tests/make_tiny_data.py
 
 echo "== 1. AR pretrain, sequence-only =="
-python pretrain_causal_ar.py --objective ar \
+python3 pretrain_causal_ar.py --objective ar \
   --sequences $D/discrete_event_sequences.pt \
   --d-model 32 --nhead 2 --layers 1 --ffn 64 --epochs 1 --batch-size 16 --max-seq-len 8 \
   --output-dir $O/pre_seq
 
 echo "== 2. fine-tune, no graph =="
-python finetune_causal_ar_fraud.py --split stratified --seed 42 \
+python3 finetune_causal_ar_fraud.py --split stratified --seed 42 \
   --pretrained-checkpoint $O/pre_seq/last_model.pt \
   --sequences $D/discrete_event_sequences.pt --labels $D/fraud_labels.pt \
   --d-model 32 --nhead 2 --layers 1 --ffn 64 --epochs 1 --batch-size 16 --max-seq-len 8 \
   --output-dir $O/ft_seq
 
 echo "== 3. AR pretrain, graph-conditioned =="
-python pretrain_tfm_ar.py --objective ar \
+python3 pretrain_tfm_ar.py --objective ar \
   --sequences $D/discrete_event_sequences.pt \
   --graph-path $D/graph_data.pt --doc-map-path $D/sample_to_graph_idx.pt \
   --config-path $CFG --epochs 1 --batch-size 16 --max-seq-len 8 \
   --output-dir $O/pre_graph
 
 echo "== 4. fine-tune, with graph =="
-python finetune_tfm_ar_fraud.py --split stratified --seed 42 \
+python3 finetune_tfm_ar_fraud.py --split stratified --seed 42 \
   --pretrained-checkpoint $O/pre_graph/last_model.pt \
   --sequences $D/discrete_event_sequences.pt --labels $D/fraud_labels.pt \
   --graph-path $D/graph_data.pt --doc-map-path $D/sample_to_graph_idx.pt \
@@ -44,11 +44,11 @@ python finetune_tfm_ar_fraud.py --split stratified --seed 42 \
   --output-dir $O/ft_graph
 
 echo "== 5. canonical XGBoost (59 features) =="
-python data/xgb_canonical.py --dir $D --labels-name fraud_labels.pt \
+python3 data/xgb_canonical.py --dir $D --labels-name fraud_labels.pt \
   --split-name sample_split_strat.pt --out $O/xgb/test_predictions.csv
 
 echo "== 6. F1-optimal (uniform) =="
-python data/compute_f1_optimal.py \
+python3 data/compute_f1_optimal.py \
   "graph=$O/ft_graph/test_predictions.csv" \
   "seq=$O/ft_seq/test_predictions.csv" \
   "xgb=$O/xgb/test_predictions.csv"
