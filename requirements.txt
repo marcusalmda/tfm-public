@@ -1,0 +1,15 @@
+# Python 3.10+
+numpy
+pandas
+scipy
+scikit-learn
+tqdm
+pyyaml
+torch
+torch-geometric
+xgboost
+lightgbm              # CoLES frozen-embedding gradient-boosting head
+pytorch-lifestream    # CoLES baseline (ptls.*)
+torchmetrics          # used by the CoLES baselines
+relbench              # RelBench rel-hm dataset + user-churn task
+transformers          # optional: cosine warmup scheduler (has a LambdaLR fallback)

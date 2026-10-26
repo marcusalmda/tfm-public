@@ -1,0 +1,32 @@
+# Tiny config for the smoke test only (fast on CPU). NOT the paper config.
+model:
+  event_type_vocab_size: 20
+  counterparty_vocab_size: 60000
+  specific_event_vocab_size: 10000
+
+gnn_model:
+  type: "HGTConv"
+  hidden_channels: 32
+  out_channels: 32
+  num_heads: 2
+  num_layers: 1
+  dropout: 0.1
+
+transformer_model:
+  d_model: 32
+  nhead: 2
+  num_encoder_layers: 1
+  dim_feedforward: 64
+  dropout: 0.1
+  max_seq_len: 8
+
+training:
+  learning_rate: 0.0002
+  batch_size: 16
+  num_epochs: 1
+  optimizer: "AdamW"
+  weight_decay: 0.01
+  clip_grad_norm: 1.0
+
+seed: 42
+num_classes: 2

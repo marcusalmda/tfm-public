@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.python-version
+
+# Data & artifacts (do NOT commit datasets or trained weights)
+data/public/
+data/processed_tabformer/
+data/processed_relbench_hm/
+data/processed/
+*.pt
+*.pth
+*.ckpt
+*.csv
+*.parquet
+checkpoints/
+results/
+runs/
+wandb/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log

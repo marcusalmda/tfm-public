@@ -1,0 +1,78 @@
+# Fine-tuning configuration for higher-capacity TFM with 1024-event context.
+
+data:
+  graph_path: "processed/hetero_graph.pt"
+  sequences_path: "processed/discrete_event_sequences.pt"
+  labels_path: "processed/fraud_labels.pt"
+  num_workers: 0
+  max_sequence_length: 1024
+
+model:
+  event_type_vocab_size: 20
+  counterparty_vocab_size: 60000
+  specific_event_vocab_size: 10000
+
+gnn_model:
+  type: "HGTConv"
+  hidden_channels: 128
+  out_channels: 128
+  num_heads: 4
+  num_layers: 2
+  dropout: 0.1
+
+transformer_model:
+  d_model: 128
+  nhead: 8
+  num_encoder_layers: 8
+  dim_feedforward: 512
+  dropout: 0.1
+  max_seq_len: 1024
+  event_facet_embedding_dims:
+    event_type_id: 32
+    counterparty_idx: 96
+    specific_event_idx: 32
+    time_hour: 8
+    time_weekday: 8
+    time_day_of_year: 16
+
+training:
+  pretrained_checkpoint_path: "checkpoints/pretrain_corrected_1024_cap/last_model.pt"
+  pretrained_mode: "pretrained"
+  finetune_strategy: "full"
+  learning_rate: 0.00002
+  batch_size: 64
+  num_epochs: 100
+  mixed_precision: "bf16"
+  allow_tf32: true
+  optimizer: "AdamW"
+  weight_decay: 0.01
+  loss:
+    type: "cross_entropy"
+    class_weight: "balanced"
+    focal_gamma: 2.0
+  scheduler_params:
+    name: "warmupcosine"
+    num_warmup_steps: 50
+  clip_grad_norm: 1.0
+  resume_from_checkpoint: false
+
+logging:
+  log_interval: 50
+  checkpoint_dir: "checkpoints/finetune_fraud_1024_cap"
+  last_checkpoint_interval: 5
+
+seed: 42
+num_classes: 2
+best_model_metric: "val_auc"
+best_model_metric_higher_is_better: true
+max_visualizations_per_category: 0
+
+evaluation:
+  test_split_size: 0.30
+  validation_split_size: 0.10
+  metrics: ["accuracy", "precision", "recall", "f1", "auc"]
+  threshold:
+    tune: true
+    metric: "f1"
+    default: 0.5
+    min_precision: null
