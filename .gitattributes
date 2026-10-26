@@ -1,0 +1,9 @@
+# This repo runs on Linux (jackal). Force LF line endings so shell scripts and
+# Python work regardless of the OS the commit was made on.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
