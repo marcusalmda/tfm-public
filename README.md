@@ -48,10 +48,11 @@ src/                       shared model + utilities
   baselines/               canonical feature extractor (59 features)
   utils/                   evaluation helpers (splits, metrics)
   datasets.py, pretrain.py
-pretrain_causal_ar.py      AR pretraining, sequence-only (no graph)
-pretrain_tfm_ar.py         AR pretraining, graph-conditioned (HGT prefix token)
-finetune_tfm_ar_fraud.py   binary fine-tune WITH graph (TabFormer fraud / rel-hm churn)
-finetune_causal_ar_fraud.py  binary fine-tune, sequence-only / no-graph ablation
+pretrain_tfm_churn_graphsample.py   graph AR pretrain, temporal neighbor sampling (TabFormer + rel-hm)
+finetune_tfm_churn_graphsample.py   graph fine-tune, neighbor sampling (TabFormer fraud + rel-hm churn)
+pretrain_causal_ar.py        sequence-only AR pretrain (no-graph ablation)
+finetune_causal_ar_fraud.py  sequence-only / no-graph fine-tune (ablation)
+finetune_tfm_ar_fraud.py / pretrain_tfm_ar.py   full-batch HGT variant (smoke test; the paper's graph results use the graphsample scripts above)
 config/finetune_fraud_config_1024_cap.yaml  HGT + Transformer config (graph path)
 data/
   prepare_tabformer.py          Kaggle CSVs -> TFM event/graph tensors
@@ -93,96 +94,100 @@ PYTHONPATH=. python data/compute_f1_optimal.py \
    (`credit_card_transactions-ibm_v2.csv`, `sd254_users.csv`, `sd254_cards.csv`)
    into `data/public/tabformer_credit_card/`, then build tensors and splits:
 
+   The graph results use **temporal neighbor sampling** (as on rel-hm), so build
+   the temporal directory and both split files (stratified + OOT):
+
    ```bash
-   PYTHONPATH=. python data/prepare_tabformer.py \
-     --tx data/public/tabformer_credit_card/credit_card_transactions-ibm_v2.csv \
-     --users data/public/tabformer_credit_card/sd254_users.csv \
-     --cards data/public/tabformer_credit_card/sd254_cards.csv \
-     --outdir data/processed_tabformer
    PYTHONPATH=. python data/prepare_tabformer_temporal.py \
      --tx data/public/tabformer_credit_card/credit_card_transactions-ibm_v2.csv \
      --users data/public/tabformer_credit_card/sd254_users.csv \
-     --outdir data/processed_tabformer
-   PYTHONPATH=. python data/rebuild_split_tabformer_match.py --dir data/processed_tabformer
+     --outdir data/processed_tabformer_temporal
+   PYTHONPATH=. python data/rebuild_split_stratified.py --dir data/processed_tabformer_temporal       # sample_split_strat.pt (in-distribution)
+   PYTHONPATH=. python data/rebuild_split_tabformer_match.py --dir data/processed_tabformer_temporal   # sample_split.pt (OOT)
    ```
 
-2. **Pretrain (AR).** Graph-conditioned and sequence-only variants (the graph
-   run reads the HGT/Transformer sizes from the config):
+2. **Pretrain (AR).** Graph (neighbor sampling) and sequence-only variants:
 
    ```bash
-   PYTHONPATH=. python pretrain_tfm_ar.py --objective ar \
-     --sequences data/processed_tabformer/discrete_event_sequences.pt \
-     --graph-path data/processed_tabformer/graph_data.pt \
-     --doc-map-path data/processed_tabformer/sample_to_graph_idx.pt \
-     --config-path config/finetune_fraud_config_1024_cap.yaml \
-     --max-seq-len 16 --output-dir checkpoints/tabformer_ar_graph
+   PYTHONPATH=. python pretrain_tfm_churn_graphsample.py \
+     --dir data/processed_tabformer_temporal --config-path config/finetune_fraud_config_1024_cap.yaml \
+     --max-seq-len 16 --batch-size 256 --epochs 15 --num-neighbors 20 15 \
+     --output-dir checkpoints/tabformer_graphsample
    PYTHONPATH=. python pretrain_causal_ar.py --objective ar \
-     --sequences data/processed_tabformer/discrete_event_sequences.pt \
+     --sequences data/processed_tabformer_temporal/discrete_event_sequences.pt \
      --max-seq-len 16 --output-dir checkpoints/tabformer_ar_seq
    ```
 
-3. **Fine-tune** (run per seed 42–46 for the stratified five-seed mean; OOT is a
-   single run). `--split stratified` = in-distribution, `--split tabformer` = OOT.
-   `finetune_tfm_ar_fraud.py` is the graph model; `finetune_causal_ar_fraud.py` is
-   the sequence-only (no-graph) ablation:
+3. **Fine-tune.** The graph model is `finetune_tfm_churn_graphsample.py` (neighbor
+   sampling); the no-graph ablation is `finetune_causal_ar_fraud.py`. `--split-name
+   sample_split_strat.pt` = in-distribution (five seeds), `sample_split.pt` = OOT
+   (single run):
 
    ```bash
-   # with graph (TFM+AR, graph)
-   PYTHONPATH=. python finetune_tfm_ar_fraud.py --split stratified --seed 42 \
-     --pretrained-checkpoint checkpoints/tabformer_ar_graph/best_model.pt \
-     --sequences data/processed_tabformer/discrete_event_sequences.pt \
-     --labels data/processed_tabformer/fraud_labels.pt \
-     --graph-path data/processed_tabformer/graph_data.pt \
-     --doc-map-path data/processed_tabformer/sample_to_graph_idx.pt \
+   # with graph (TFM+AR, graph) — stratified, five seeds
+   for S in 42 43 44 45 46; do
+   PYTHONPATH=. python finetune_tfm_churn_graphsample.py \
+     --dir data/processed_tabformer_temporal --labels-name fraud_labels.pt --split-name sample_split_strat.pt \
+     --pretrained-checkpoint checkpoints/tabformer_graphsample/best_model.pt \
      --config-path config/finetune_fraud_config_1024_cap.yaml \
-     --max-seq-len 16 --output-dir results/fraud_tfm_graph_strat_s42
+     --max-seq-len 16 --batch-size 256 --epochs 10 --num-neighbors 20 15 --seed $S \
+     --output-dir results/fraud_tfm_graphsample_strat_s$S ; done
+   # OOT: same command with --split-name sample_split.pt (single run)
    # no graph (ablation)
    PYTHONPATH=. python finetune_causal_ar_fraud.py --split stratified --seed 42 \
      --pretrained-checkpoint checkpoints/tabformer_ar_seq/best_model.pt \
-     --sequences data/processed_tabformer/discrete_event_sequences.pt \
-     --labels data/processed_tabformer/fraud_labels.pt \
+     --sequences data/processed_tabformer_temporal/discrete_event_sequences.pt \
+     --labels data/processed_tabformer_temporal/fraud_labels.pt \
      --max-seq-len 16 --output-dir results/fraud_tfm_seq_strat_s42
    ```
 
 4. **Baselines** (same splits / context length):
 
    ```bash
-   PYTHONPATH=. python data/coles_baseline.py --dir data/processed_tabformer \
+   PYTHONPATH=. python data/coles_baseline.py --dir data/processed_tabformer_temporal \
      --max-seq-len 16 --finetune --out results/coles_tab_strat_sl16/seed42 --seed 42
-   PYTHONPATH=. python data/xgb_canonical.py --dir data/processed_tabformer \
-     --out results/xgb_canonical_tab_strat/seed42 --seed 42
+   PYTHONPATH=. python data/xgb_canonical.py --dir data/processed_tabformer_temporal \
+     --split-name sample_split_strat.pt --out results/xgb_canonical_tab_strat/seed42 --seed 42
    ```
 
 5. **Significance / aggregation** and the F1-optimal column:
 
    ```bash
    PYTHONPATH=. python data/aggregate_seeds.py \
-     --graph-dirs results/fraud_tfm_graph_strat_s{SEED} \
+     --graph-dirs results/fraud_tfm_graphsample_strat_s{SEED} \
      --seq-dirs   results/fraud_tfm_seq_strat_s{SEED} --seeds 42 43 44 45 46
    PYTHONPATH=. python data/sig_tabformer.py --a <predA.csv> --b <predB.csv>
    ```
 
 ## Reproducing — rel-hm (churn)
 
+rel-hm has a very large customer–article graph (~1M customer nodes), so the HGT
+is trained with **temporal neighbor sampling** (`NeighborLoader`, past-only via
+`edge_time`) rather than full-batch — otherwise the graph forward does not fit in
+GPU memory. The `*_graphsample.py` scripts implement this; they read the whole
+prepared directory via `--dir`.
+
 ```bash
 # 1. data (needs the relbench package; downloads rel-hm to its cache)
 PYTHONPATH=. python data/prepare_relbench_hm.py --outdir data/processed_relbench_hm
 
-# 2. fine-tune TFM (binary churn), context of 32 events
-PYTHONPATH=. python finetune_causal_ar_fraud.py --split relbench --seed 42 \
-  --pretrained-checkpoint checkpoints/relbench_ar_graph/best_model.pt \
-  --sequences data/processed_relbench_hm/discrete_event_sequences.pt \
-  --labels data/processed_relbench_hm/churn_labels.pt \
-  --max-seq-len 32 --output-dir results/churn_tfm_graph_s42
+# 2. AR pretrain with neighbor sampling
+PYTHONPATH=. python pretrain_tfm_churn_graphsample.py \
+  --dir data/processed_relbench_hm --config-path config/finetune_fraud_config_1024_cap.yaml \
+  --max-seq-len 32 --batch-size 256 --epochs 15 --num-neighbors 20 15 \
+  --output-dir checkpoints/relbench_graphsample
 
-# 3. CoLES baseline
+# 3. fine-tune (churn) with neighbor sampling
+PYTHONPATH=. python finetune_tfm_churn_graphsample.py \
+  --dir data/processed_relbench_hm --config-path config/finetune_fraud_config_1024_cap.yaml \
+  --pretrained-checkpoint checkpoints/relbench_graphsample/best_model.pt \
+  --max-seq-len 32 --batch-size 256 --epochs 8 --num-neighbors 20 15 --seed 42 \
+  --output-dir results/churn_tfm_graphsample_s42
+
+# 4. CoLES baseline
 PYTHONPATH=. python data/coles_relbench.py --proc-dir data/processed_relbench_hm \
   --pre-max 32 --inf-max 32 --finetune --out results/coles_relbench/seed42 --seed 42
 ```
-
-(Pretrain the rel-hm AR checkpoints with `pretrain_tfm_ar.py` /
-`pretrain_causal_ar.py` using `--max-seq-len 32` and the rel-hm tensors, as in
-step 2 of the TabFormer section.)
 
 ## Smoke test (tiny synthetic data)
 
